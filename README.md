@@ -1,4 +1,4 @@
-Curiosity-driven Red-teaming for Large Language Models
+Value Augmented Sampling
 =
 
 This repository contains the official implementation for [our paper](https://openreview.net/pdf?id=4KqkizXgXU), Value Augmented Sampling for Aligning and Personalizing Language Models.
