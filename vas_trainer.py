@@ -62,7 +62,7 @@ from trl.models import (
     AutoModelForSeq2SeqLMWithValueHead,
     AutoModelForCausalLMWithValueHead
 )
-from trl import AdaptiveKLController, BaseTrainer, FixedKLController, RunningMoments
+from trl.trainer import AdaptiveKLController, BaseTrainer, FixedKLController, RunningMoments
 from vas_config import VASConfig
 
 if is_deepspeed_available():

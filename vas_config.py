@@ -24,8 +24,8 @@ from typing_extensions import Annotated
 
 from trl.trainer.utils import exact_div
 
-from ..core import flatten_dict
-from ..import_utils import is_wandb_available
+from trl.core import flatten_dict
+from trl.import_utils import is_wandb_available
 
 
 JSONDict = Annotated[Optional[dict], tyro.conf.arg(metavar="JSON", constructor=json.loads)]
