@@ -1,16 +1,3 @@
-# Copyright 2022 The HuggingFace Team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 import inspect
 import math
 import os
@@ -202,7 +189,7 @@ class VASTrainer(BaseTrainer):
             )
         # Step 1: Initialize Accelerator
         self.accelerator = Accelerator(
-            mixed_precision='bf16',
+            mixed_precision=config.mixed_precision,
             log_with=config.log_with,
             gradient_accumulation_steps=config.gradient_accumulation_steps,
             project_config=ProjectConfiguration(**config.project_kwargs),
@@ -454,21 +441,23 @@ class VASTrainer(BaseTrainer):
             return_prompt (`bool`, *optional*):
                 If set to `False` the prompt is not returned but only the newly generated tokens, defaults to `True`.
             vas_generation (`bool`, *optional*):
-                If set to `True` the generation process will be augmented the the Value function.
+                If set to `True` the generation process will be augmented with the Value function, default to 'False'.
+            beta ('int', *optional*):
+                Beta parameter to use. Relevant only if vas_generation is set to 'True'.
             generation_kwargs (dict[str, Any]):
                 Keyword arguments for generation.
 
         Returns:
             `torch.LongTensor`: A tensor of shape (`batch_size`, `gen_len`) containing response tokens.
         """
-        ref_model = self.model if self.ref_model is None else self.ref_model
+        use_model_as_ref_model = True if self.ref_model is None and self.is_peft_model else False
         if vas_generation:
             vas_logit_processor = VASLogitsProcessor(self.model, beta=beta, topk_per_device_batch_size=1)
             generation_kwargs['logits_processor'] = LogitsProcessorList([vas_logit_processor])
         if isinstance(query_tensor, List):
-            if vas_generation:
+            if not use_model_as_ref_model:
                 response = self._generate_batched(
-                    ref_model,
+                    self.ref_model,
                     query_tensor,
                     length_sampler=length_sampler,
                     batch_size=batch_size,
@@ -478,14 +467,13 @@ class VASTrainer(BaseTrainer):
             else:
                 with self.optional_peft_ctx():
                     response = self._generate_batched(
-                        ref_model,
+                        self.model,
                         query_tensor,
                         length_sampler=length_sampler,
                         batch_size=batch_size,
                         return_prompt=return_prompt,
                         **generation_kwargs,
                     )
-
         else:
             if len(query_tensor.shape) == 2:
                 raise ValueError(
@@ -495,12 +483,12 @@ class VASTrainer(BaseTrainer):
             if length_sampler is not None:
                 generation_kwargs["max_new_tokens"] = length_sampler()
 
-            if vas_generation:
-                with unwrap_model_for_generation(ref_model, self.accelerator) as unwrapped_model:
+            if not use_model_as_ref_model:
+                with unwrap_model_for_generation(self.ref_model, self.accelerator) as unwrapped_model:
                     response = unwrapped_model.generate(input_ids=query_tensor.unsqueeze(dim=0), **generation_kwargs)
             else:
                 with unwrap_model_for_generation(
-                    ref_model, self.accelerator, is_peft_model=self.is_peft_model
+                    self.model, self.accelerator, is_peft_model=True
                 ) as unwrapped_model:
                     response = unwrapped_model.generate(
                         input_ids=query_tensor.unsqueeze(dim=0), **generation_kwargs
@@ -667,18 +655,6 @@ class VASTrainer(BaseTrainer):
             scores_dtype = scores.dtype
             scores = torch.clip(scores.float(), -self.config.score_clip, self.config.score_clip).to(dtype=scores_dtype)
 
-        # if we want to push best model to the hub
-        # TODO@idan: fix this for VAS
-        if hasattr(self, "highest_reward"):
-            if self.compare_step % self.config.compare_steps == 0:
-                curr_mean_reward = scores.mean()
-                # if the best reward ever seen
-                if curr_mean_reward > self.highest_reward:
-                    self.highest_reward = curr_mean_reward
-                    # push model to hub
-                    self.push_to_hub(**self.push_to_hub_kwargs)
-            self.compare_step += 1
-
         timing = dict()
         t0 = time.time()
 
@@ -715,15 +691,13 @@ class VASTrainer(BaseTrainer):
         model_inputs_names = list(model_inputs.keys())
 
         with torch.no_grad():
-            values = torch.zeros_like(model_inputs['input_ids'], dtype=torch.float32)[:, :-1]
-            masks = model_inputs['attention_mask'][:, :-1]
-            # values, masks = self.batched_forward_pass(
-            #     self.model,
-            #     queries,
-            #     responses,
-            #     model_inputs,
-            #     response_masks=response_masks,
-            # )
+            values, masks = self.batched_forward_pass(
+                self.model,
+                queries,
+                responses,
+                model_inputs,
+                response_masks=response_masks,
+            )
 
         timing["time/vas/forward_pass"] = time.time() - t
 
@@ -775,34 +749,18 @@ class VASTrainer(BaseTrainer):
                         mini_batch_dict[k] = batch_dict[k][mini_batch_inds]
                     with self.accelerator.accumulate(self.model):
                         model_inputs = {k: mini_batch_dict[k] for k in model_inputs_names}
-                        # hack: remove padding if batch size is 1
-                        if self.config.mini_batch_size == 1:
-                            model_inputs['input_ids'] = model_inputs['input_ids'][model_inputs['attention_mask']==1].unsqueeze(0)
-                            mini_batch_dict["values"] = mini_batch_dict["values"][mini_batch_dict["masks"]==1].unsqueeze(0)
-                            mini_batch_dict["returns"] = mini_batch_dict["returns"][mini_batch_dict["masks"]==1].unsqueeze(0)
-                            mini_batch_dict["masks"] = mini_batch_dict["masks"][mini_batch_dict['masks']==1].unsqueeze(0)
-                            model_inputs['attention_mask'] = model_inputs['attention_mask'][model_inputs['attention_mask']==1].unsqueeze(0)
-
                         vpreds, forward_mask = self.batched_forward_pass(
                             self.model,
                             mini_batch_dict["queries"],
                             mini_batch_dict["responses"],
                             model_inputs,
                         )
-                        if self.config.mini_batch_size == 1:
-                            train_stats = self.train_minibatch(
-                                mini_batch_dict["values"][forward_mask==1] if forward_mask.shape == mini_batch_dict["values"].shape else mini_batch_dict["values"][:,:-1][forward_mask==1],
-                                vpreds[forward_mask==1],
-                                mini_batch_dict["masks"][forward_mask == 1] if forward_mask.shape == mini_batch_dict["masks"].shape else mini_batch_dict["masks"][:,:-1][forward_mask==1],
-                                mini_batch_dict["returns"][forward_mask==1] if forward_mask.shape == mini_batch_dict["returns"].shape else mini_batch_dict["returns"][:,:-1][forward_mask==1],
-                            )
-                        else:
-                            train_stats = self.train_minibatch(
-                                mini_batch_dict["values"],
-                                vpreds,
-                                mini_batch_dict["masks"],
-                                mini_batch_dict["returns"],
-                            )
+                        train_stats = self.train_minibatch(
+                            mini_batch_dict["values"],
+                            vpreds,
+                            mini_batch_dict["masks"],
+                            mini_batch_dict["returns"],
+                        )
                         all_stats.append(train_stats)
 
         timing["time/vas/optimize_step"] = time.time() - t
