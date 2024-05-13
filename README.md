@@ -30,5 +30,12 @@ python tinyllama_hh.py --log_with=wandb --ref_model_name hanseungwook/vas-llama-
 
 ## Citation
 ```latex
-Coming Soon
+@inproceedings{
+  han2024value,
+  title={Value Augmented Sampling for Language Model Alignment and Personalization},
+  author={Seungwook Han and Idan Shenfeld and Akash Srivastava and Yoon Kim and Pulkit Agrawal},
+  booktitle={ICLR 2024 Workshop on Reliable and Responsible Foundation Models},
+  year={2024},
+  url={https://openreview.net/forum?id=XTbAvbm4vW}
+}
 ```
