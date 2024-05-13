@@ -61,7 +61,7 @@ class VASConfig:
     """Adam learning rate"""
     gamma: float = 1
     """Gamma parameter for advantage calculation"""
-    lam: float = 1.0
+    lam: float = 0.95
     """Lambda parameter for advantage calculation"""
     batch_size: int = 32
     """Number of samples per optimisation step"""

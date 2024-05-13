@@ -690,6 +690,7 @@ class VASTrainer(BaseTrainer):
 
         model_inputs_names = list(model_inputs.keys())
 
+        self.model.eval()
         with torch.no_grad():
             values, masks = self.batched_forward_pass(
                 self.model,
@@ -698,6 +699,7 @@ class VASTrainer(BaseTrainer):
                 model_inputs,
                 response_masks=response_masks,
             )
+        self.model.train()
 
         timing["time/vas/forward_pass"] = time.time() - t
 

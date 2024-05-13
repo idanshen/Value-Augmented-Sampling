@@ -90,8 +90,11 @@ if args.use_peft:
     model.pretrained_model = prepare_model_for_kbit_training(model.pretrained_model, use_gradient_checkpointing=True)
     model.pretrained_model = get_peft_model(model.pretrained_model, peft_config)
     model.is_peft_model = True
-    torch.nn.init.zeros_(model.v_head.summary.weight)
-    torch.nn.init.zeros_(model.v_head.summary.bias)
+torch.nn.init.zeros_(model.v_head.summary.weight)
+torch.nn.init.zeros_(model.v_head.summary.bias)
+for module in model.modules():
+    if isinstance(module, torch.nn.Dropout):
+        module.p = 0
 
 ref_model = trl_model_class.from_pretrained(
      vas_config.ref_model_name,
@@ -122,7 +125,6 @@ reward_model = vas_trainer.accelerator.prepare(reward_model)
 reward_model.requires_grad_(False)
 reward_tokenizer = AutoTokenizer.from_pretrained(reward_model_name)
 reward_model.eval()
-
 for _epoch, batch in tqdm(enumerate(vas_trainer.dataloader)):
     query_tensors = batch["query"]
     response_tensors = batch["response"]
