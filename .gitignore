@@ -1,3 +1,4 @@
 wandb/*
+models/*
 .idea
 __pycache__/
