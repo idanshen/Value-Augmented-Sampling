@@ -33,9 +33,9 @@ class VASConfig:
     """Log with either 'wandb' or 'tensorboard', check  https://huggingface.co/docs/accelerate/usage_guides/tracking for more details"""
     task_name: Optional[str] = None
     """Name of task to use - used only for tracking purposes"""
-    model_name: Optional[str] = "gpt2"
+    model_name: Optional[str] = "hanseungwook/vas-tiny-llama-1.1b-hh-sft"
     """Name of model to use - used only for tracking purposes"""
-    ref_model_name: Optional[str] = "gpt2"
+    ref_model_name: Optional[str] = "hanseungwook/vas-llama-2-7b-hh-sft"
     """Name of reference model to use - used only for tracking purposes"""
     query_dataset: Optional[str] = "imdb"
     """Name of dataset to query - used only for tracking purposes"""

@@ -1,8 +1,8 @@
 """
 python tinyllama_hh.py \
     --log_with=wandb
-    --ref_model_name ./models/Llama-HH-SFT
-    --model_name ./models/TinyLlama-HH-SFT
+    --ref_model_name hanseungwook/vas-llama-2-7b-hh-sft
+    --model_name hanseungwook/vas-tiny-llama-1.1b-hh-sft
 """
 
 import os
@@ -143,4 +143,9 @@ for _epoch, batch in tqdm(enumerate(vas_trainer.dataloader)):
     vas_trainer.log_stats(stats, batch, rewards, columns_to_log=["query", "response"])
 
 vas_trainer.save_pretrained("./example")
+
+# Decoding example
+query = "Human: How are you doing today? Assistant:"
+inputs = ref_tokenizer.encode(query, return_tensors='pt').to(reward_model.device)
+output = vas_trainer.generate(inputs, vas_generation=True, beta=3.0)
 
